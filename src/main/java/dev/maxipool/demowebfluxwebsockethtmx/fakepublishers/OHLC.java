@@ -7,7 +7,7 @@ import java.util.Random;
 
 @Builder
 @With
-public record OHLC(int index, float open, float high, float low, float close) {
+public record OHLC(int id, int index, float open, float high, float low, float close) {
 
   static OHLC createOHLC(Random random) {
     float open = 100 + random.nextFloat() * 10; // Random open price
@@ -15,7 +15,7 @@ public record OHLC(int index, float open, float high, float low, float close) {
     float low = open - random.nextFloat() * 5;   // Random low price
     float close = low + random.nextFloat() * 10; // Random close price
 
-    return new OHLC(0, open, high, low, close);
+    return new OHLC(0, 0, open, high, low, close);
   }
 
   static OHLC getNextOHLC(OHLC previous, Random random) {
@@ -25,6 +25,7 @@ public record OHLC(int index, float open, float high, float low, float close) {
     float close = low + random.nextFloat() * 2f; // Random close price
 
     return new OHLC(
+        previous.index() % 1024,
         previous.index() + 1,
         random.nextFloat() > 0.5f ? open : 0f,
         random.nextFloat() > 0.5f ? high : 0f,
@@ -39,7 +40,7 @@ public record OHLC(int index, float open, float high, float low, float close) {
     var low = next.low() != 0f ? next.low() : acc.low();
     var close = next.close() != 0f ? next.close() : acc.close();
 
-    return new OHLC(next.index(), open, high, low, close);
+    return new OHLC(next.id(), next.index(), open, high, low, close);
   }
 
 }
