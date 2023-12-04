@@ -6,8 +6,6 @@ import reactor.core.publisher.Flux;
 
 import java.time.Duration;
 import java.util.Random;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
 import static dev.maxipool.demowebfluxwebsockethtmx.fakepublishers.OHLC.createOHLC;
 import static dev.maxipool.demowebfluxwebsockethtmx.fakepublishers.OHLC.getNextOHLC;
@@ -18,9 +16,10 @@ public class PublisherFactory {
 
   private final Random random = new Random();
 
-  private final ConcurrentMap<Integer, Flux<OHLC>> publishersMap = new ConcurrentHashMap<>();
-
-  Flux<OHLC> createPublisher() {
+  /**
+   * A publisher of OHLC, can be subscribed to from many subscribers, shares latest value, emits each item only once.
+   */
+  public Flux<OHLC> createPublisher() {
     return Flux
         .<OHLC, OHLC>generate(
             () -> createOHLC(random),
@@ -30,19 +29,13 @@ public class PublisherFactory {
               return nextOhlc;
             })
         .zipWith(
-            Flux.interval(Duration.ofMillis(0), Duration.ofMillis(10000)),
+            Flux.interval(Duration.ofNanos(10_000)), // 10k nanos = 100k emit per second
             (ohlc, interval) -> ohlc)
-        .doOnNext(i -> System.out.println("Emit #" + i.index()))
+//        .doOnNext(i -> System.out.println("Emit #" + i.index()))
         .replay(1) // Flux --> ConnectableFlux but also it replays the latest emitted value for subscribers that come in late.
 //        .publish() // turn the cold flux into a hot flux (Flux --> ConnectableFlux); CANNOT be combined with `replay()`
         .autoConnect() // connects to this hot flux when the 1st subscriber subscribes.
         ;
-  }
-
-  void createPublishers() {
-    for (int i = 0; i < 10; i++) {
-      publishersMap.put(i, createPublisher());
-    }
   }
 
   public static void main(String[] args) throws InterruptedException {
