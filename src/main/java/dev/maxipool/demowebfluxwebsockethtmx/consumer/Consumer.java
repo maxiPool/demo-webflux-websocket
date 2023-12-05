@@ -4,7 +4,7 @@ import dev.maxipool.demowebfluxwebsockethtmx.fakepublishers.OHLC;
 import dev.maxipool.demowebfluxwebsockethtmx.fakepublishers.PublisherFactory;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
-import reactor.core.publisher.Flux;
+import reactor.core.publisher.ConnectableFlux;
 import reactor.core.publisher.Sinks;
 
 import java.time.Duration;
@@ -50,7 +50,7 @@ public class Consumer {
 
   private final ConcurrentMap<Integer, SinkFlux> sinksMap = new ConcurrentHashMap<>((int) (1.5 * 1024));
 
-  private record SinkFlux(Integer id, Sinks.Many<OHLC> sink, Flux<OHLC> flux) {
+  private record SinkFlux(Integer id, Sinks.Many<OHLC> sink, ConnectableFlux<OHLC> flux) {
   }
 
   /**
@@ -69,45 +69,50 @@ public class Consumer {
    */
   void consumeManyIdSingleSourceVersion1() {
     var publisher = factory.createPublisher();
-    publisher.subscribe(i -> {
-      sinksMap
-          .compute(
-              i.id(),
-              (k, v) -> ofNullable(v)
-                  .map(j -> {
-                    j.sink().tryEmitNext(i);
-                    return j;
-                  })
-                  .orElseGet(() -> {
-                    var consumerInCallback = Sinks
-                        .many()
-                        .unicast()
-                        .<OHLC>onBackpressureBuffer();
-                    var asFlux = consumerInCallback
-                        .asFlux() // read-only version of a Sink
-                        .take(1) // take 1 and concat with sampled to emit the 1st published value without delay
-                        .concatWith(
-                            consumerInCallback
-                                .asFlux()
-                                .skip(1)
-                                .scan(OHLC::mergeUpdates)
-                                .sample(Duration.ofSeconds(5))
-                        )
-                        .replay(1);
-                    var sf = new SinkFlux(
-                        i.id(),
-                        consumerInCallback,
-                        asFlux
-                    );
-                    consumerInCallback.tryEmitNext(i);
-                    return sf;
-                  })
-          );
-    });
+    publisher.subscribe(
+        i -> sinksMap
+            .compute(
+                i.id(),
+                (k, maybeV) -> ofNullable(maybeV)
+                    .map(v -> {
+                      v.sink().tryEmitNext(i);
+                      return v;
+                    })
+                    .orElseGet(() -> {
+                      var sf = getSinkFlux(i.id());
+                      sf.sink().tryEmitNext(i);
+                      return sf;
+                    })
+            ));
   }
 
-  public OHLC getById(Integer id) {
-    return sinksMap.get(id).flux().blockFirst();
+  private static SinkFlux getSinkFlux(Integer id) {
+    var sink = Sinks
+        .many()
+        .multicast()
+        .<OHLC>onBackpressureBuffer(1);
+    var flux = sink
+        .asFlux() // read-only version of a Sink
+//        .share()
+//        .replay(1)
+//        .autoConnect()
+        .publish() // publish + autoConnect shares the flux, so it can emit in multiple places: 'sampled' and 'start'.
+        .autoConnect();
+
+    var sampled = flux
+        .skip(1)
+        .scan(OHLC::mergeUpdates)
+        .sample(Duration.ofSeconds(1));
+
+    var start = flux.take(1);
+
+    var replay = sampled.startWith(start).replay(1);
+//    var replay = sampled.replay(1);
+    return new SinkFlux(id, sink, replay);
+  }
+
+  public ConnectableFlux<OHLC> getByIdVersion1(Integer id) {
+    return sinksMap.get(id).flux();
   }
 
   /**
