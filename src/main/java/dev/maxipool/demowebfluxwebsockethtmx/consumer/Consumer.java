@@ -6,6 +6,7 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.Disposable;
+import reactor.core.publisher.ConnectableFlux;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 
@@ -23,7 +24,8 @@ import static java.util.Optional.ofNullable;
 public class Consumer {
 
   private final PublisherFactory factory;
-  private Disposable consumeManyIdSingleSourceVersion1Publisher;
+  private Disposable version1Subscription;
+  private ConnectableFlux<OHLC> version1Pub;
 
   public Consumer(PublisherFactory factory) {
     this.factory = factory;
@@ -31,14 +33,13 @@ public class Consumer {
   }
 
   private void getVersion1Publisher(PublisherFactory factory) {
-    var pub = factory.createPublisher();
-    consumeManyIdSingleSourceVersion1Publisher = pub.subscribe(
+    version1Pub = factory.createPublisher();
+    version1Subscription = version1Pub.subscribe(
         i -> sinksMap
             .compute(
                 i.id(),
                 (k, maybeV) -> ofNullable(maybeV)
                     .map(v -> {
-//                      log.info("Emitted {}", i.index());
                       v.sink().tryEmitNext(i);
                       return v;
                     })
@@ -48,6 +49,7 @@ public class Consumer {
                       return sf;
                     })
             ));
+    version1Pub.connect();
   }
 
   /**
@@ -103,37 +105,25 @@ public class Consumer {
         .many()
         .replay()
         .<OHLC>latest();
-//    var flux = sink
-//        .asFlux() // read-only version of a Sink
-////        .replay(1)
-////        .autoConnect();
-////        .publish() // publish + autoConnect shares the flux, so it can emit in multiple places: 'sampled' and 'start'.
-////        .autoConnect();
-//    ;
-//
-////    var start = flux.take(1);
-////    var start = flux.next();
-//    var sampled = flux
-//        .skip(1)
-//        .scan(OHLC::mergeUpdates)
-//        .sample(Duration.ofSeconds(1));
-//
-//    var replay = sampled
-////        .startWith(start)
-//        .replay(1)
-//        .autoConnect()
-//        ;
-////    var replay = sampled.replay(1);
-    return new SinkFlux(id, sink, sink
+
+    var splitMeFlux = sink
         .asFlux()
+        .publish();
+
+    var head = splitMeFlux.next().log();
+    var sampledTail = splitMeFlux
+        .skip(1)
         .scan(OHLC::mergeUpdates)
-        .sample(Duration.ofSeconds(1))
-//        .cache(1)
+        .sample(Duration.ofSeconds(1));
+    splitMeFlux.connect();
+
+    var finalFlux = sampledTail
+        .startWith(head)
         .share()
-//        .replay(1)
-//        .autoConnect()
-//        .log()
-    );
+        .replay(1);
+    finalFlux.connect();
+
+    return new SinkFlux(id, sink, finalFlux);
   }
 
   public Flux<OHLC> getByIdVersion1(Integer id) {

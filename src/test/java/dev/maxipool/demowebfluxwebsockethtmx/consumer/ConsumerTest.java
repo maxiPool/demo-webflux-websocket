@@ -23,7 +23,7 @@ class ConsumerTest {
 
   @Test
   void should_consumeManyIdSingleSourceVersion1() throws InterruptedException {
-    sleep(100);
+    sleep(1000);
     var fluxId0 = consumer.getByIdVersion1(0);
 
 //    fluxId0.connect(); // connect tells the flux it can start emitting values; otherwise nothing happens.
