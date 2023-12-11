@@ -25,7 +25,7 @@ public record OHLC(int id, int index, float open, float high, float low, float c
     float close = low + random.nextFloat() * 2f; // Random close price
 
     return new OHLC(
-        previous.index() % 1024,
+        previous.index() % 512,
         previous.index() + 1,
         random.nextFloat() > 0.5f ? open : 0f,
         random.nextFloat() > 0.5f ? high : 0f,

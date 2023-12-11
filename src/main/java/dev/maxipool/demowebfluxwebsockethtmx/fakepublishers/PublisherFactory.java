@@ -2,9 +2,13 @@ package dev.maxipool.demowebfluxwebsockethtmx.fakepublishers;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
+import reactor.tools.agent.ReactorDebugAgent;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Random;
 
 import static dev.maxipool.demowebfluxwebsockethtmx.fakepublishers.OHLC.createOHLC;
@@ -16,11 +20,13 @@ public class PublisherFactory {
 
   private final Random random = new Random();
 
+  private final List<Disposable> disposables = new ArrayList<>();
+
   /**
    * A publisher of OHLC, can be subscribed to from many subscribers, shares latest value, emits each item only once.
    */
   public Flux<OHLC> createPublisher() {
-    return Flux
+    var flux = Flux
         .<OHLC, OHLC>generate(
             () -> createOHLC(random),
             (state, sink) -> {
@@ -29,16 +35,17 @@ public class PublisherFactory {
               return nextOhlc;
             })
         .zipWith(
-            Flux.interval(Duration.ofNanos(10_000)), // 10k nanos = 100k emit per second
+            Flux.interval(Duration.ofNanos(100_000)), // 10k nanos = 100k emit per second
             (ohlc, interval) -> ohlc)
-//        .doOnNext(i -> System.out.println("Emit #" + i.index()))
-        .replay(1) // Flux --> ConnectableFlux but also it replays the latest emitted value for subscribers that come in late.
-//        .publish() // turn the cold flux into a hot flux (Flux --> ConnectableFlux); CANNOT be combined with `replay()`
-        .autoConnect() // connects to this hot flux when the 1st subscriber subscribes.
-        ;
+        .publish();
+    disposables.add(flux.connect());
+    return flux;
   }
 
   public static void main(String[] args) throws InterruptedException {
+    ReactorDebugAgent.init();
+    ReactorDebugAgent.processExistingClasses();
+
     var publisherFactory = new PublisherFactory();
     var pub = publisherFactory.createPublisher();
 

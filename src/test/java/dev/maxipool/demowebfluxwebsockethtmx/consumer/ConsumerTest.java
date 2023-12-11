@@ -3,6 +3,7 @@ package dev.maxipool.demowebfluxwebsockethtmx.consumer;
 import dev.maxipool.demowebfluxwebsockethtmx.fakepublishers.PublisherFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import reactor.tools.agent.ReactorDebugAgent;
 
 import static java.lang.Thread.sleep;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -13,17 +14,19 @@ class ConsumerTest {
 
   @BeforeEach
   void beforeEach() {
+    ReactorDebugAgent.init();
+    ReactorDebugAgent.processExistingClasses();
+
     final var factory = new PublisherFactory();
     consumer = new Consumer(factory);
   }
 
   @Test
   void should_consumeManyIdSingleSourceVersion1() throws InterruptedException {
-    consumer.consumeManyIdSingleSourceVersion1();
     sleep(100);
     var fluxId0 = consumer.getByIdVersion1(0);
 
-    fluxId0.connect(); // connect tells the flux it can start emitting values; otherwise nothing happens.
+//    fluxId0.connect(); // connect tells the flux it can start emitting values; otherwise nothing happens.
     var veryFirst = fluxId0.blockFirst();
     System.out.println("veryFirst: " + veryFirst);
     sleep(500);
