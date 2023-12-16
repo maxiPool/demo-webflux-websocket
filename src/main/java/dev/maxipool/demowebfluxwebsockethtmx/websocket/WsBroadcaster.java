@@ -17,7 +17,7 @@ import static reactor.core.publisher.Flux.fromIterable;
 @Slf4j
 @RequiredArgsConstructor
 @Service
-public class Broadcaster {
+public class WsBroadcaster {
 
   private static final String TOPIC_TEMPLATE = "/topic/%d/%d";
 
@@ -47,7 +47,10 @@ public class Broadcaster {
     broadcastHelper(() -> {
       var allFlux = consumer.getAllFlux();
       log.warn("Flux/topics to subscribe to: {}", allFlux.size());
-      fromIterable(allFlux).flatMap(f -> f).subscribe(i -> messagingTemplate.convertAndSend(TOPIC_TEMPLATE.formatted(i.sourceId(), i.id()), i));
+      fromIterable(allFlux)
+          .flatMap(f -> f)
+          .subscribe(
+              i -> messagingTemplate.convertAndSend(TOPIC_TEMPLATE.formatted(i.sourceId(), i.id()), i));
     });
   }
 
@@ -60,12 +63,16 @@ public class Broadcaster {
       var allFlux = consumer.getAllFluxWithMetadata();
       log.warn("Flux/topics to subscribe to: {}", allFlux.size());
       final var source0ohlc0 = new Consumer.SourceIdOhlcId(0, 0);
-      allFlux.forEach(f -> f.flux().subscribe(i -> {
-        if (f.id().ohlcId() == source0ohlc0.ohlcId()) {
-          log.info("source {} ohlc 0 {}", f.id().sourceId(), i);
-        }
-        messagingTemplate.convertAndSend(TOPIC_TEMPLATE.formatted(f.id().sourceId(), f.id().ohlcId()), i);
-      }));
+      allFlux.forEach(
+          f -> f
+              .flux()
+              .subscribe(i -> {
+                if (f.id().ohlcId() == source0ohlc0.ohlcId()) {
+                  log.info("source {} ohlc 0 {}", f.id().sourceId(), i);
+                }
+                messagingTemplate
+                    .convertAndSend(TOPIC_TEMPLATE.formatted(f.id().sourceId(), f.id().ohlcId()), i);
+              }));
     });
   }
 
