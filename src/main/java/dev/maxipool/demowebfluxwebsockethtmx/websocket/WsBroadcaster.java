@@ -20,10 +20,9 @@ import static reactor.core.publisher.Flux.fromIterable;
 public class WsBroadcaster {
 
   private static final String TOPIC_TEMPLATE = "/topic/%d/%d";
-
-  private final SimpMessagingTemplate messagingTemplate;
   private final AtomicBoolean brokerAvailable = new AtomicBoolean(false);
 
+  private final SimpMessagingTemplate messagingTemplate;
   private final Consumer consumer;
 
   @EventListener
