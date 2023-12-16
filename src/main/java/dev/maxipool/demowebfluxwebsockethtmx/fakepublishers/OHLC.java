@@ -18,14 +18,14 @@ public record OHLC(int id, int index, float open, float high, float low, float c
     return new OHLC(0, 0, open, high, low, close);
   }
 
-  static OHLC getNextOHLC(OHLC previous, Random random) {
+  static OHLC getNextOHLC(OHLC previous, Random random, int nbOfOhlcIds) {
     float open = previous.open() + (random.nextFloat() > .6f ? 1f : -1.1f) * random.nextFloat() * 2f; // Random open price
     float high = open + random.nextFloat();  // Random high price
     float low = open - random.nextFloat();   // Random low price
     float close = low + random.nextFloat() * 2f; // Random close price
 
     return new OHLC(
-        previous.index() % 512,
+        (previous.index() + 1) % nbOfOhlcIds,
         previous.index() + 1,
         random.nextFloat() > 0.5f ? open : 0f,
         random.nextFloat() > 0.5f ? high : 0f,

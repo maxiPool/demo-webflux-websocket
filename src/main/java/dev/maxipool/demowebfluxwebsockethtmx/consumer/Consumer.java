@@ -33,7 +33,7 @@ public class Consumer {
   }
 
   private void getVersion1Publisher(PublisherFactory factory) {
-    version1Pub = factory.createPublisher();
+    version1Pub = factory.createPublisher(100_000, 512);
     version1Subscription = version1Pub.subscribe(
         i -> sinksMap
             .compute(
@@ -69,7 +69,7 @@ public class Consumer {
         .scan(OHLC::mergeUpdates)
         .sample(Duration.ofSeconds(1));
 
-    var publisher = factory.createPublisher();
+    var publisher = factory.createPublisher(100_000, 512);
     publisher.subscribe(i -> {
       consumerInCallback.tryEmitNext(i);
       if (i.index() > 0 && i.index() % 100_000 == 0) {
@@ -99,7 +99,6 @@ public class Consumer {
    * <br /><br />
    * So I need a {@code Map<item_id, Sink>}
    */
-
   private static SinkFlux getSinkFlux(Integer id) {
     var sink = Sinks
         .many()
