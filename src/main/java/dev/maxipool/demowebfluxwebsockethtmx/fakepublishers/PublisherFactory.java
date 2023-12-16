@@ -20,14 +20,13 @@ import static java.util.stream.Collectors.toMap;
 @Component
 public class PublisherFactory {
 
-  private final Random random = new Random();
-
+  private static final Random RANDOM = new Random();
   private static final int NANOS_PER_SECOND = 1_000_000_000;
 
   /**
    * A publisher of OHLC, can be subscribed to from many subscribers, shares latest value, emits each item only once.
    */
-  public ConnectableFlux<OHLC> createPublisher(double nbEmitPerSecond, int nbOfOhlcIds) {
+  public ConnectableFlux<OHLC> createPublisher(int sourceId, double nbEmitPerSecond, int nbOfOhlcIds) {
     // 1 second = 1 000 000 000 nanos
     // 1 emit per second = 1 000 000 000 nanos
     // 1 000 000 emit per second = 1 000 nanos
@@ -35,9 +34,9 @@ public class PublisherFactory {
     var duration = Duration.ofNanos((long) (NANOS_PER_SECOND / nbEmitPerSecond));
     return Flux
         .<OHLC, OHLC>generate(
-            () -> createOHLC(random),
+            () -> createOHLC(RANDOM, sourceId),
             (state, sink) -> {
-              var nextOhlc = getNextOHLC(state, random, nbOfOhlcIds);
+              var nextOhlc = getNextOHLC(state, RANDOM, nbOfOhlcIds, sourceId);
               sink.next(state);
               return nextOhlc;
             })
@@ -52,10 +51,9 @@ public class PublisherFactory {
 
   public Map<Integer, PublisherInfo> createPublishers(int nbOfPublishersToCreate, double nbEmitPerSecond, int nbOfOhlcIds) {
     final var finalNbEmitPerSecond = nbEmitPerSecond / nbOfPublishersToCreate;
-    ;
     return IntStream
         .range(0, nbOfPublishersToCreate)
-        .mapToObj(i -> new PublisherInfo(i, createPublisher(finalNbEmitPerSecond, nbOfOhlcIds)))
+        .mapToObj(i -> new PublisherInfo(i, createPublisher(i, finalNbEmitPerSecond, nbOfOhlcIds)))
         .collect(toMap(PublisherInfo::sourceId, i -> i));
   }
 
@@ -64,7 +62,7 @@ public class PublisherFactory {
     ReactorDebugAgent.processExistingClasses();
 
     var publisherFactory = new PublisherFactory();
-    var pub = publisherFactory.createPublisher(10, 4);
+    var pub = publisherFactory.createPublisher(0, 10, 4);
     var pubWithLog = pub.log();
     pub.connect();
 

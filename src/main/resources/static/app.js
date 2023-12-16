@@ -48,14 +48,17 @@ function sendName() {
 }
 
 function sendTopic() {
+    const sourceIds = [0, 1, 2, 3, 4];
     const topicId = $("#topic").val();
     console.log("Sending SUBSCRIBE to " + topicId);
 
-    stompClient.subscribe('/topic/' + topicId, (greeting) => {
-        console.log("topic", greeting);
-        const message = JSON.parse(greeting.body);
-        console.log("received message ", message);
-        showGreeting(JSON.stringify(message));
+    sourceIds.forEach(sourceId => {
+        stompClient.subscribe(`/topic/${sourceId}/${topicId}`, (greeting) => {
+            console.log("topic", greeting);
+            const message = JSON.parse(greeting.body);
+            console.log("received message ", message);
+            showGreeting(JSON.stringify(message));
+        });
     });
 }
 

@@ -19,6 +19,8 @@ import static java.lang.Thread.sleep;
 @Service
 public class Broadcaster {
 
+  private static final String TOPIC_TEMPLATE = "/topic/%d/%d";
+
   private final SimpMessagingTemplate messagingTemplate;
   private final AtomicBoolean brokerAvailable = new AtomicBoolean(false);
 
@@ -49,16 +51,18 @@ public class Broadcaster {
     //       Here's one solution: {@code Flux<Map<id,Flux<OHLC>>> }
     var allFlux = consumer.getAllFlux();
     log.warn("Flux/topics to subscribe to: {}", allFlux.size());
+    final var source0ohlc0 = new Consumer.SourceIdOhlcId(0, 0);
     disposables = allFlux
         .stream()
         .map(
             f -> f
+                .flux()
                 .subscribe(i -> {
-                  if (i.id() == 0) {
-                    log.info("index 0 {}", i);
+                  if (f.id().ohlcId() == source0ohlc0.ohlcId()) {
+                    log.info("source {} ohlc 0 {}", f.id().sourceId(), i);
                   }
                   messagingTemplate
-                      .convertAndSend("/topic/" + i.id(), i);
+                      .convertAndSend(TOPIC_TEMPLATE.formatted(f.id().sourceId(), f.id().ohlcId()), i);
                 }))
         .toList();
   }

@@ -12,7 +12,9 @@ import reactor.core.publisher.Sinks;
 
 import java.time.Duration;
 import java.time.LocalTime;
-import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -29,27 +31,56 @@ public class Consumer {
 
   public Consumer(PublisherFactory factory) {
     this.factory = factory;
-    getVersion1Publisher(factory);
+//    getVersion1Publisher(factory);
+
+    getVersion2Publishers(factory);
   }
 
+  /**
+   * Uses a single publisher (which can emit many items with different ids)
+   */
   private void getVersion1Publisher(PublisherFactory factory) {
-    version1Pub = factory.createPublisher(100_000, 512);
-    version1Subscription = version1Pub.subscribe(
-        i -> sinksMap
-            .compute(
-                i.id(),
-                (k, maybeV) -> ofNullable(maybeV)
-                    .map(v -> {
-                      v.sink().tryEmitNext(i);
-                      return v;
-                    })
-                    .orElseGet(() -> {
-                      var sf = getSinkFlux(i.id());
-                      sf.sink().tryEmitNext(i);
-                      return sf;
-                    })
-            ));
+    final var publisherId = 0;
+    version1Pub = factory.createPublisher(0, 100_000, 512);
+    version1Subscription = version1Pub.subscribe(i -> putInSinksMap(publisherId, i));
     version1Pub.connect();
+  }
+
+  private final Map<Integer, Disposable> version2Subscriptions = new HashMap<>();
+  private Map<Integer, PublisherFactory.PublisherInfo> version2Pubs;
+
+  /**
+   * Uses 5 publishers
+   */
+  private void getVersion2Publishers(PublisherFactory factory) {
+    version2Pubs = factory.createPublishers(5, 100_000, 512);
+
+    version2Pubs
+        .forEach((publisherId, publisherInfo) -> {
+          var disposable = publisherInfo
+              .publisher()
+              .subscribe(i -> putInSinksMap(publisherId, i));
+          version2Subscriptions.put(publisherId, disposable);
+        });
+
+    version2Pubs.values().forEach(v -> v.publisher().connect());
+  }
+
+  private SinkFlux putInSinksMap(Integer publisherId, OHLC i) {
+    return sinksMap
+        .compute(
+            new SourceIdOhlcId(publisherId, i.id()),
+            (k, maybeV) -> ofNullable(maybeV)
+                .map(v -> {
+                  v.sink().tryEmitNext(i);
+                  return v;
+                })
+                .orElseGet(() -> {
+                  var sf = getSinkFlux(publisherId, i.id());
+                  sf.sink().tryEmitNext(i);
+                  return sf;
+                })
+        );
   }
 
   /**
@@ -69,20 +100,26 @@ public class Consumer {
         .scan(OHLC::mergeUpdates)
         .sample(Duration.ofSeconds(1));
 
-    var publisher = factory.createPublisher(100_000, 512);
+    var publisher = factory.createPublisher(0, 100_000, 512);
     publisher.subscribe(i -> {
       consumerInCallback.tryEmitNext(i);
       if (i.index() > 0 && i.index() % 100_000 == 0) {
-        System.out.println("100k emissions from publisher");
+        System.out.printf("%dk emissions from publisher%n", i.index() / 1000);
       }
     });
 
     asFlux.subscribe(i -> System.out.println(LocalTime.now() + " asFlux sub: " + i));
   }
 
-  private final ConcurrentMap<Integer, SinkFlux> sinksMap = new ConcurrentHashMap<>((int) (1.5 * 1024));
+  public record SourceIdOhlcId(int sourceId, int ohlcId) {
+  }
 
-  private record SinkFlux(Integer id, Sinks.Many<OHLC> sink, Flux<OHLC> flux) {
+  public record FluxWithMetadata(SourceIdOhlcId id, Flux<OHLC> flux) {
+  }
+
+  private final ConcurrentMap<SourceIdOhlcId, SinkFlux> sinksMap = new ConcurrentHashMap<>((int) (1.5 * 1024));
+
+  private record SinkFlux(SourceIdOhlcId id, Sinks.Many<OHLC> sink, Flux<OHLC> flux) {
   }
 
   /**
@@ -99,7 +136,7 @@ public class Consumer {
    * <br /><br />
    * So I need a {@code Map<item_id, Sink>}
    */
-  private static SinkFlux getSinkFlux(Integer id) {
+  private static SinkFlux getSinkFlux(Integer publisherId, Integer ohlcId) {
     var sink = Sinks
         .many()
         .replay()
@@ -122,16 +159,19 @@ public class Consumer {
         .replay(1);
     finalFlux.connect();
 
-    return new SinkFlux(id, sink, finalFlux);
+    return new SinkFlux(new SourceIdOhlcId(publisherId, ohlcId), sink, finalFlux);
   }
 
   public Flux<OHLC> getByIdVersion1(Integer id) {
     return sinksMap.get(id).flux();
   }
 
-  //  public ConnectableFlux<Map<String, ConnectableFlux<OHLC>>> get
-  public Collection<Flux<OHLC>> getAllFlux() {
-    return sinksMap.values().stream().map(SinkFlux::flux).toList();
+  // TODO: to add/remove from the Map: Flux<Map<String, ConnectableFlux<OHLC>>>
+  public List<FluxWithMetadata> getAllFlux() {
+    return sinksMap
+        .entrySet().stream()
+        .map(i -> new FluxWithMetadata(i.getKey(), i.getValue().flux()))
+        .toList();
   }
 
   /**
