@@ -8,17 +8,18 @@ import org.springframework.stereotype.Component;
 import reactor.core.Disposable;
 import reactor.core.publisher.ConnectableFlux;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 
 import java.time.Duration;
 import java.time.LocalTime;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+import static dev.maxipool.demowebfluxwebsockethtmx.fakepublishers.OHLC.mergeUpdates;
 import static java.util.Optional.ofNullable;
+import static reactor.core.publisher.Flux.combineLatest;
 import static reactor.core.publisher.Flux.fromStream;
 
 @Slf4j
@@ -49,22 +50,13 @@ public class Consumer {
     version1Pub.connect();
   }
 
-  private final Map<Integer, Disposable> version2Subscriptions = new HashMap<>();
-  private Map<Integer, PublisherFactory.PublisherInfo> version2Pubs;
-
   /**
    * Uses 5 publishers
    */
   private void enableVersion2Publishers(PublisherFactory factory) {
-    version2Pubs = factory.createPublishers(5, 100_000, 512);
+    var version2Pubs = factory.createPublishers(5, 100_000, 512);
 
-    version2Pubs
-        .forEach((publisherId, publisherInfo) -> {
-          var disposable = publisherInfo
-              .publisher()
-              .subscribe(this::putInSinksMap);
-          version2Subscriptions.put(publisherId, disposable);
-        });
+    version2Pubs.forEach((publisherId, publisherInfo) -> publisherInfo.publisher().subscribe(this::putInSinksMap));
 
     version2Pubs.values().forEach(v -> v.publisher().connect());
   }
@@ -120,7 +112,7 @@ public class Consumer {
   public record FluxWithMetadata(SourceIdOhlcId id, Flux<OHLC> flux) {
   }
 
-  private record SinkFlux(SourceIdOhlcId id, Sinks.Many<OHLC> sink, Flux<OHLC> flux) {
+  public record SinkFlux(SourceIdOhlcId id, Sinks.Many<OHLC> sink, Flux<OHLC> flux) {
   }
 
   /**
@@ -156,6 +148,7 @@ public class Consumer {
 
     var finalFlux = sampledTail
         .startWith(head)
+        .scan(OHLC::mergeUpdates)
         .share()
         .replay(1);
     finalFlux.connect();
@@ -182,6 +175,9 @@ public class Consumer {
         .toList();
   }
 
+  @Getter
+  private ConnectableFlux<ConcurrentMap<SourceIdOhlcId, SinkFlux>> fluxOfMap;
+
   /**
    * Actually, there's another way to do the sampling/merging:<br />
    * Every ohlc ID from a single source would be put into a Map for the sampling<br />
@@ -198,50 +194,60 @@ public class Consumer {
    */
   void enableVersion3Publishers() {
     var nbOfOhlcIds = 5;
-    var publishers = factory.createPublishers(2, 10, nbOfOhlcIds);
+    var initialCapacity = (int) (nbOfOhlcIds * 1.5) + 1;
 
-    // problematicSolution(publishers, nbOfOhlcIds);
-    // SOLUTION: sample all the publishers together !
+    var publishers = factory.createPublishers(1, 100, nbOfOhlcIds);
+
     var fluxStream = publishers.values().stream().map(PublisherFactory.PublisherInfo::publisher);
     var oncePerSecondOhlcMap = fromStream(fluxStream)
         .flatMap(f -> f)
-        .scan(
-            new ConcurrentHashMap<>((int) (nbOfOhlcIds * 1.5) + 1),
-            Consumer::addEntryToMap)
+        .scan(new ConcurrentHashMap<>(initialCapacity), Consumer::addEntryToMap)
         .sample(Duration.ofSeconds(1));
 
-    // Problem: I can't just replace the latest value for a topic with the latest sampled emission 'X' because
-    // 'X' might contain null-like fields that will overwrite perfectly up-to-date fields that are already in
-    // the SinksMap.
-//    oncePerSecondOhlcMap.subscribe(i -> i.values().forEach(this::putInSinksMap));
-    // SOLUTION: ...
-    //
+    var mySinkMap = new ConcurrentHashMap<SourceIdOhlcId, SinkFlux>(initialCapacity);
+    fluxOfMap = combineLatest(
+        Mono.just(mySinkMap),
+        oncePerSecondOhlcMap,
+        (ConcurrentMap<SourceIdOhlcId, SinkFlux> accumulatorMap, ConcurrentMap<SourceIdOhlcId, OHLC> oncePerSecondSamplingMap) -> {
+          oncePerSecondSamplingMap.forEach((id, sampledOhlc) ->
+              accumulatorMap.compute(
+                  id,
+                  (k, maybeSinkFlux) -> ofNullable(maybeSinkFlux)
+                      .map(sinkFlux -> {
+                        sinkFlux.sink().tryEmitNext(sampledOhlc);
+                        return sinkFlux;
+                      })
+                      .orElseGet(() -> getSimpleSinkFlux(id, sampledOhlc))
+              ));
+          return accumulatorMap;
+        })
+        .log()
+        .publish();
+
     /*
-    Draft:
-    I have a Flux<Map<item_id, OHLC>> and I want to merge each item with the existing SinkMap
-
-
+    Problem: the websocket shows the same item 5-10 times.
+    Every 1 second, the fluxOfMap emits
+    the websocket subscribes to all the topics in this 1-second Map,
+    then when it emits again, the websocket subscribes again to the same subjects.
      */
 
     publishers.values().forEach(p -> p.publisher().connect());
+    fluxOfMap.connect();
   }
 
-  private static void problematicSolution(Map<Integer, PublisherFactory.PublisherInfo> publishers, int nbOfOhlcIds) {
-    var oncePerSecondFluxMaps = publishers
-        .values().stream()
-        .map(i -> getSampledMapForPublisher(i.publisher(), nbOfOhlcIds));
-
-    var fluxOfMergedMaps = fromStream(oncePerSecondFluxMaps)
-        .flatMap(f -> f)
-        // problem: if there are 2+ publishers, then the scan will emit everytime a publisher emits a sample.
-        // this means the scan operator will emit the same map again and again...
-        // each time it's emitted, it will maybe contain new entries; Looks like a mess for downstream!
-        .scan(
-            new ConcurrentHashMap<>((int) (nbOfOhlcIds * 1.5) + 1),
-            (ConcurrentMap<SourceIdOhlcId, OHLC> acc, ConcurrentMap<SourceIdOhlcId, OHLC> next) -> {
-              next.forEach((k, v) -> addEntryToMap(acc, v));
-              return acc;
-            });
+  private static SinkFlux getSimpleSinkFlux(SourceIdOhlcId id, OHLC sampledOhlc) {
+    var sink = Sinks
+        .many()
+        .replay()
+        .<OHLC>latest();
+    var flux = sink
+        .asFlux()
+        .scan(OHLC::mergeUpdates)
+        .share()
+        .replay(1);
+    sink.tryEmitNext(sampledOhlc);
+    flux.connect();
+    return new SinkFlux(id, sink, flux);
   }
 
   private static Flux<ConcurrentMap<SourceIdOhlcId, OHLC>> getSampledMapForPublisher(ConnectableFlux<OHLC> publisher, int nbOfOhlcIds) {
@@ -256,7 +262,7 @@ public class Consumer {
     acc.compute(
         new SourceIdOhlcId(next.sourceId(), next.id()),
         (k, maybeV) -> ofNullable(maybeV)
-            .map(v -> OHLC.mergeUpdates(v, next))
+            .map(v -> mergeUpdates(v, next))
             .orElse(next));
     return acc;
   }
