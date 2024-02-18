@@ -63,7 +63,7 @@ public class PublisherFactory {
 
     var publisherFactory = new PublisherFactory();
     var pub = publisherFactory.createPublisher(0, 10, 4);
-    var pubWithLog = pub.log();
+    var pubWithLog = pub/*.log()*/;
     pub.connect();
 
     final var count1st = new AtomicInteger(0);

@@ -93,7 +93,8 @@ public class WsBroadcaster {
   private void broadcastHelper(Runnable runnable) {
     if (!brokerAvailable.get()) {
       log.warn("Websocket Broker not available yet; not going to broadcast quotes; Shutting down my app!");
-      System.exit(-1);
+//      System.exit(-1);
+      return;
     }
     mySleep();
 

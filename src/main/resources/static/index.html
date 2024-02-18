@@ -41,7 +41,39 @@
                     <input type="text" id="topic" class="form-control" placeholder="Your TOPIC here...">
                 </div>
                 <button id="send-topic" class="btn btn-default" type="submit">Send Topic</button>
+                <button id="unsubscribe-topic" class="btn btn-default" type="submit">Unsubscribe Topic</button>
             </form>
+        </div>
+        <div class="col-md-4">
+            <form class="form-inline">
+                <div class="form-group">
+                    <label for="name">What is your record id?</label>
+                    <input type="text" id="record-id" class="form-control" placeholder="record id here...">
+                </div>
+                <div class="form-group">
+                    <label for="name">field1?</label>
+                    <input type="text" id="record-field1" class="form-control" placeholder="field 1 here...">
+                </div>
+                <div class="form-group">
+                    <label for="name">field2?</label>
+                    <input type="text" id="record-field2" class="form-control" placeholder="field 2 here...">
+                </div>
+                <button id="update-record" class="btn btn-default" type="submit">Send Update</button>
+                <button id="get-all-records" class="btn btn-default" type="submit">Get All Records</button>
+            </form>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-md-12">
+            <table id="all-records" class="table table-striped">
+                <thead>
+                <tr>
+                    <th>All Records</th>
+                </tr>
+                </thead>
+                <tbody>
+                </tbody>
+            </table>
         </div>
     </div>
     <div class="row">

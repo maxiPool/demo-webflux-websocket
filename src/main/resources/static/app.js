@@ -8,6 +8,9 @@ stompClient.onConnect = (frame) => {
     stompClient.subscribe('/topic/greetings', (greeting) => {
         showGreeting(JSON.parse(greeting.body).content);
     });
+    stompClient.subscribe('/topic/allRecords', (allRecords) => {
+        showAllRecords(JSON.parse(allRecords.body));
+    });
 };
 
 stompClient.onWebSocketError = (error) => {
@@ -28,6 +31,7 @@ function setConnected(connected) {
         $("#conversation").hide();
     }
     $("#greetings").html("");
+    $("#all-records").html("");
 }
 
 function connect() {
@@ -62,8 +66,47 @@ function sendTopic() {
     });
 }
 
+function unsubTopic() {
+    const sourceIds = [0];
+    const topicId = $("#topic").val();
+    console.log("Sending UNSUBSCRIBE to " + topicId);
+
+    sourceIds.forEach(sourceId => {
+        stompClient.unsubscribe(`/topic/${sourceId}/${topicId}`, (greeting) => {
+            console.log("topic", greeting);
+            const message = JSON.parse(greeting.body);
+            console.log("received message ", message);
+            showGreeting(`unsubscribed ${sourceId}/${topicId}`);
+        });
+    });
+}
+
+function sendUpdatedRecord() {
+    const field1 = $("#record-field1").val();
+    const field2 = $("#record-field2").val();
+    const id = $("#record-id").val();
+    if (!!id) {
+        stompClient.publish({
+            destination: "/app/updateRecord",
+            body: JSON.stringify({
+                'id': id,
+                'field1': !field1 ? null : field1,
+                'field2': !field2 ? null : field2,
+            })
+        });
+    }
+}
+
+function getAllRecords() {
+    stompClient.publish({destination: "/app/getAllRecords"});
+}
+
 function showGreeting(message) {
     $("#greetings").append("<tr><td>" + message + "</td></tr>");
+}
+
+function showAllRecords(allRecords) {
+    $("#all-records > tbody").html(allRecords?.map((r) => `<tr><td>${JSON.stringify(r)}</td></tr>`).join(''));
 }
 
 $(function () {
@@ -72,4 +115,7 @@ $(function () {
     $("#disconnect").click(() => disconnect());
     $("#send").click(() => sendName());
     $("#send-topic").click(() => sendTopic());
+    $("#unsubscribe-topic").click(() => sendTopic());
+    $("#update-record").click(() => sendUpdatedRecord());
+    $("#get-all-records").click(() => getAllRecords());
 });
