@@ -31,7 +31,7 @@ function setConnected(connected) {
         $("#conversation").hide();
     }
     $("#greetings").html("");
-    $("#all-records").html("");
+    $("#all-records > tbody").html("");
 }
 
 function connect() {

@@ -15,6 +15,6 @@ public interface PatchableObjectMapper {
 
   @Mapping(target = "id", ignore = true)
   @BeanMapping(nullValuePropertyMappingStrategy = IGNORE)
-  void partialUpdate(UpdateRecordMessage myPatchableObjectDto, @MappingTarget MyPatchableObject myPatchableObject);
+  void partialUpdate(UpdateRecordMessage patch, @MappingTarget MyPatchableObject myPatchableObject);
 
 }

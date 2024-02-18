@@ -26,41 +26,4 @@ public class StreamController {
     return new Greeting("Hello, " + HtmlUtils.htmlEscape(message.name()) + "!");
   }
 
-  private final PatchableObjectMapper patchableObjectMapper;
-
-  private static final Map<String, MyPatchableObject> records = new HashMap<>();
-
-  static {
-    var e1 = new MyPatchableObject();
-    var e2 = new MyPatchableObject();
-    e1.setId("1");
-    e1.setField1("e1-f1");
-    e1.setField2("e1-f2");
-    e2.setId("2");
-    e2.setField1("e2-f1");
-    e2.setField2("e2-f2");
-    records.put(e1.getId(), e1);
-    records.put(e2.getId(), e2);
-  }
-
-  /**
-   * Websocket endpoint to update records
-   */
-  @MessageMapping("/updateRecord")
-  @SendTo("/topic/allRecords")
-  public List<MyPatchableObject> patchMethod(UpdateRecordMessage updateMessage) {
-    var myPatchableObject = records.get(updateMessage.id());
-    patchableObjectMapper.partialUpdate(updateMessage, myPatchableObject);
-    return new ArrayList<>(records.values());
-  }
-
-  /**
-   * WebSocket endpoint to get the list of all records
-   */
-  @MessageMapping("/getAllRecords")
-  @SendTo("/topic/allRecords")
-  public List<MyPatchableObject> getAllRecords() {
-    return new ArrayList<>(records.values());
-  }
-
 }
