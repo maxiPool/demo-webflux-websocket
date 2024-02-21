@@ -36,8 +36,8 @@ public class Consumer {
   public Consumer(PublisherFactory factory) {
     this.factory = factory;
 //    enableVersion1Publisher(factory);
-//    enableVersion2Publishers(factory);
-    enableVersion3Publishers();
+    enableVersion2Publishers(factory);
+//    enableVersion3Publishers();
   }
 
   /**
@@ -139,7 +139,7 @@ public class Consumer {
         .asFlux()
         .publish();
 
-    var head = splitMeFlux.next()/*.log()*/;
+    var head = splitMeFlux.next().log();
     var sampledTail = splitMeFlux
         .skip(1)
         .scan(OHLC::mergeUpdates)
@@ -221,7 +221,7 @@ public class Consumer {
               ));
           return accumulatorMap;
         })
-        /*.log()*/
+        .log()
         .publish();
 
     /*

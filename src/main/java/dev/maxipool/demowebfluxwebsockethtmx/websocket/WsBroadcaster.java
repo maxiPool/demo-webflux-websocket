@@ -32,8 +32,8 @@ public class WsBroadcaster {
   public void onApplicationEvent(BrokerAvailabilityEvent event) {
     brokerAvailable.set(event.isBrokerAvailable());
 //    broadcastQuotes();
-//    broadcastQuotesUsingTheMergedFluxes();
-    broadcastQuotesUsingV3();
+    broadcastQuotesUsingTheMergedFluxesAkaV2();
+//    broadcastQuotesUsingV3();
   }
 
   // TODO: fix bug
@@ -55,7 +55,7 @@ public class WsBroadcaster {
    * <br />
    * This means a single thread will be pushing on the websocket queue now.
    */
-  public void broadcastQuotesUsingTheMergedFluxes() {
+  public void broadcastQuotesUsingTheMergedFluxesAkaV2() {
     broadcastHelper(() -> {
       var allFlux = consumer.getAllFlux();
       log.warn("Flux/topics to subscribe to: {}", allFlux.size());

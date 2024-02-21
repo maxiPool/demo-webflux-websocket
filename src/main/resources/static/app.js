@@ -8,13 +8,15 @@ stompClient.onConnect = (frame) => {
     stompClient.subscribe('/topic/greetings', (greeting) => {
         showGreeting(JSON.parse(greeting.body).content);
     });
-    stompClient.subscribe('/topic/allRecords', (allRecords) => {
+    stompClient.subscribe('/topic/all-records', (allRecords) => {
         showAllRecords(JSON.parse(allRecords.body));
     });
+    getAllRecords();
 };
 
 stompClient.onWebSocketError = (error) => {
     console.error('Error with websocket', error);
+    setConnected(false);
 };
 
 stompClient.onStompError = (frame) => {
@@ -25,13 +27,6 @@ stompClient.onStompError = (frame) => {
 function setConnected(connected) {
     $("#connect").prop("disabled", connected);
     $("#disconnect").prop("disabled", !connected);
-    if (connected) {
-        $("#conversation").show();
-    } else {
-        $("#conversation").hide();
-    }
-    $("#greetings").html("");
-    $("#all-records > tbody").html("");
 }
 
 function connect() {
@@ -51,8 +46,9 @@ function sendName() {
     });
 }
 
+const sourceIds = [0, 1, 2, 3, 4];
+
 function sendTopic() {
-    const sourceIds = [0, 1, 2, 3, 4];
     const topicId = $("#topic").val();
     console.log("Sending SUBSCRIBE to " + topicId);
 
@@ -67,7 +63,6 @@ function sendTopic() {
 }
 
 function unsubTopic() {
-    const sourceIds = [0];
     const topicId = $("#topic").val();
     console.log("Sending UNSUBSCRIBE to " + topicId);
 
@@ -87,7 +82,7 @@ function sendUpdatedRecord() {
     const id = $("#record-id").val();
     if (!!id) {
         stompClient.publish({
-            destination: "/app/updateRecord",
+            destination: "/app/update-record",
             body: JSON.stringify({
                 'id': id,
                 'field1': !field1 ? null : field1,
@@ -98,7 +93,8 @@ function sendUpdatedRecord() {
 }
 
 function getAllRecords() {
-    stompClient.publish({destination: "/app/getAllRecords"});
+    console.log("Sending GET ALL RECORDS with WS");
+    stompClient.publish({destination: "/app/get-all-records"});
 }
 
 function showGreeting(message) {
@@ -112,10 +108,20 @@ function showAllRecords(allRecords) {
 $(function () {
     $("form").on('submit', (e) => e.preventDefault());
     $("#connect").click(() => connect());
+    // $(document).ready(connect);
     $("#disconnect").click(() => disconnect());
     $("#send").click(() => sendName());
     $("#send-topic").click(() => sendTopic());
-    $("#unsubscribe-topic").click(() => sendTopic());
-    $("#update-record").click(() => sendUpdatedRecord());
-    $("#get-all-records").click(() => getAllRecords());
+    $("#unsubscribe-topic").click(() => unsubTopic());
+    $("#update-record-ws").click(() => sendUpdatedRecord());
+    $("#get-all-records-ws").click(() => getAllRecords());
+    $(document).on("htmx:afterRequest", event => {
+        if(event.detail.xhr.status !== 200){
+            return alert("Error: Could Not Find Resource");
+        }
+        if (event.detail.elt.id === 'get-all-records') {
+            console.log("After GET ALL RECORDS (REST/HTMX)")
+            showAllRecords(JSON.parse(event.detail.xhr.response));
+        }
+    });
 });
